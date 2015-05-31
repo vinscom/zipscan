@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"flag"
 	"fmt"
 	"archive/zip"
@@ -34,6 +35,8 @@ func init() {
 }
 
 func main() {
+	
+	runtime.GOMAXPROCS(2)
 	
 	flag.Parse()
 	
