@@ -4,7 +4,7 @@ Searching for file or content of file in Linux or Mac OS X is difficult task whe
 ## Usage of zipscan:
 *  -d=".": Directory to scan
 *  -e=false: Enable content search
-*  -p=".*": RegExp pattern to match file name or path
+*  -p=".*": RegExp pattern to match file path and content
 
 ## Example
 ./zipscan -d . -e true -p Apache
