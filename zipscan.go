@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path"
 	"runtime"
 	"flag"
 	"fmt"
@@ -26,12 +27,12 @@ type fileScanner func(string) []fileInfo
 
 var directoryToScan string
 var patternToSearch string
-var enableContentSearch bool
+var contentSearch bool
 
 func init() {
 	flag.StringVar(&directoryToScan, "d", ".", "Directory to scan")
-	flag.StringVar(&patternToSearch, "p", ".*", "RegExp pattern to match file name or path")
-	flag.BoolVar(&enableContentSearch, "e", false, "Enable content search")
+	flag.StringVar(&patternToSearch, "p", ".*", "RegExp pattern to match file name, path or content")
+	flag.BoolVar(&contentSearch, "e", false, "Enable content search")
 }
 
 func main() {
@@ -41,15 +42,18 @@ func main() {
 	flag.Parse()
 	
 	fileInfoChannel := make(chan fileInfo)
+	done := make(chan bool)
 	
-	go fileListPrinter(fileInfoChannel)
+	go fileListPrinter(fileInfoChannel,done)
 	
-	filepath.Walk(directoryToScan,createWalker(patternToSearch,fileInfoChannel))
+	filepath.Walk(directoryToScan,createWalker(patternToSearch,fileInfoChannel,contentSearch))
 	
 	close(fileInfoChannel)
+	
+	<- done
 }
 
-func fileListPrinter(allFileInfoChannel chan fileInfo) {
+func fileListPrinter(allFileInfoChannel chan fileInfo,done chan bool) {
 	for {
 		select {
 			case fInfo , ok := <- allFileInfoChannel :
@@ -58,32 +62,34 @@ func fileListPrinter(allFileInfoChannel chan fileInfo) {
 						fmt.Println(fInfo.path)
 					}
 				} else {
+					done <- true
 					break
 				}
 		}
 	}
 }
 
-func createWalker(pattern string, allFileInfoChannel chan fileInfo) filepath.WalkFunc {
+func createWalker(pattern string, allFileInfoChannel chan fileInfo,enableContentSearch bool) filepath.WalkFunc {
 
 	compiledPattern := regexp.MustCompile(pattern)
-	fileScanner := createfileScanner(compiledPattern)
+	fileScanner := createfileScanner(compiledPattern,enableContentSearch)
 
-	return func(path string, info os.FileInfo, err error) error {
-		if info.IsDir() {
-			fInfo := fileInfo{path: path, dir: true, zip: false, foundContentMatch: false, foundPathMatch: false}
-			p := compiledPattern.FindStringIndex(path)
-			if p != nil {
-				fInfo.foundPathMatch = true
-			}
-			allFileInfoChannel <- fInfo
-		} else {
-			fInfo := fileScanner(path)
-			for _ , i := range fInfo {
-				allFileInfoChannel <- i
+	return func(path string, info os.FileInfo, err error) error {		
+		if(err == nil){
+			if info.IsDir() {
+				fInfo := fileInfo{path: path, dir: true, zip: false, foundContentMatch: false, foundPathMatch: false}
+				p := compiledPattern.FindStringIndex(info.Name())
+				if p != nil {
+					fInfo.foundPathMatch = true
+				}
+				allFileInfoChannel <- fInfo
+			} else {
+				fInfo := fileScanner(path)
+				for _ , i := range fInfo {
+					allFileInfoChannel <- i
+				}
 			}
 		}
-		
 		return nil
 	}
 }
@@ -109,12 +115,12 @@ func createContentFinder(r *regexp.Regexp) contentFinder {
 	}
 }
 
-func createfileScanner(pattern *regexp.Regexp) fileScanner {
+func createfileScanner(pattern *regexp.Regexp,enableContentSearch bool) fileScanner {
 
 	fnFileNameMatcher := createStringFinder(pattern)
 	fnFileContentMatcher := createContentFinder(pattern)
-	fnZipReader := createZipFileReader(fnFileNameMatcher, fnFileContentMatcher)
-	fnNormalReader := createNormalFileReader(fnFileNameMatcher, fnFileContentMatcher)
+	fnZipReader := createZipFileReader(fnFileNameMatcher, fnFileContentMatcher,enableContentSearch)
+	fnNormalReader := createNormalFileReader(fnFileNameMatcher, fnFileContentMatcher,enableContentSearch)
 
 	return func(path string) []fileInfo {
 		processedFiles := fnZipReader(path)
@@ -125,7 +131,7 @@ func createfileScanner(pattern *regexp.Regexp) fileScanner {
 	}
 }
 
-func createZipFileReader(fileNameMatcher stringFinder, fileContentMatcher contentFinder) fileScanner {
+func createZipFileReader(fileNameMatcher stringFinder, fileContentMatcher contentFinder,enableContentSearch bool) fileScanner {
 	return func(path string) []fileInfo {
 
 		zipFile, err := zip.OpenReader(path)
@@ -169,19 +175,20 @@ func createZipFileReader(fileNameMatcher stringFinder, fileContentMatcher conten
 	}
 }
 
-func createNormalFileReader(fileNameMatcher stringFinder, fileContentMatcher contentFinder) fileScanner {
-	return func(path string) []fileInfo {
+func createNormalFileReader(fileNameMatcher stringFinder, fileContentMatcher contentFinder,enableContentSearch bool) fileScanner {
+	return func(fPath string) []fileInfo {
 
 		fInfo := make([]fileInfo, 1)
 
-		fInfo[0] = fileInfo{path: path, dir: false, zip: false, foundContentMatch: false, foundPathMatch: false}
+		fInfo[0] = fileInfo{path: fPath, dir: false, zip: false, foundContentMatch: false, foundPathMatch: false}
 
-		if fileNameMatcher(path) {
+		//Match File Name
+		if fileNameMatcher(path.Base(fPath)) {
 			fInfo[0].foundPathMatch = true
 		}
 		
 		if enableContentSearch {
-			nFile, err := os.Open(path)
+			nFile, err := os.Open(fPath)
 			defer nFile.Close()
 	
 			if err == nil && fileContentMatcher(nFile) {
