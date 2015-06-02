@@ -62,7 +62,7 @@ func (i *csvString) Set(value string) error {
 
 func init() {
 	flag.StringVar(&directoryToScan, "d", ".", "Directory to scan")
-	flag.Var(&filterFilePatterns, "f", "File Filter e.g. *.jar,*.zip")
+	flag.Var(&filterFilePatterns, "f", "File or Directory Name Filter e.g. *.jar,*.zip")
 	flag.StringVar(&patternToSearch, "p", ".*", "RegExp pattern to match file name, path or content")
 	flag.BoolVar(&contentSearch, "e", false, "Enable content search")
 }
@@ -109,19 +109,19 @@ func createWalker(pattern string, allFileInfoChannel chan fileInfo,filteFilterLi
 
 	return func(path string, info os.FileInfo, err error) error {		
 		if(err == nil){
-			if info.IsDir() {
-				fInfo := fileInfo{path: path, dir: true, zip: false, foundContentMatch: false, foundPathMatch: false}
-				p := compiledPattern.FindStringIndex(info.Name())
-				if p != nil {
-					fInfo.foundPathMatch = true
-				}
-				allFileInfoChannel <- fInfo
-			} else {
-				if fileNameScanner(info.Name()){
+			if fileNameScanner(info.Name()){
+				if info.IsDir() {
+					fInfo := fileInfo{path: path, dir: true, zip: false, foundContentMatch: false, foundPathMatch: false}
+					p := compiledPattern.FindStringIndex(info.Name())
+					if p != nil {
+						fInfo.foundPathMatch = true
+					}
+					allFileInfoChannel <- fInfo
+				} else {
 					fInfo := fileScanner(path)
 					for _ , i := range fInfo {
 						allFileInfoChannel <- i
-					}					
+					}
 				}
 			}
 		}
