@@ -13,6 +13,8 @@
 package main
 
 import (
+	"strings"
+	"errors"
 	"path"
 	"runtime"
 	"flag"
@@ -36,13 +38,31 @@ type fileInfo struct {
 type stringFinder func(string) bool
 type contentFinder func(io.Reader) bool
 type fileScanner func(string) []fileInfo
+type filterFile func(string) bool
+type csvString []string
 
 var directoryToScan string
 var patternToSearch string
 var contentSearch bool
+var filterFilePatterns csvString
+
+func (i *csvString) String() string {
+	return fmt.Sprint(*i)
+}
+
+func (i *csvString) Set(value string) error {
+	if len(*i) > 0 {
+		return errors.New("flag already set")
+	}
+	for _, s := range strings.Split(value, ",") {
+		*i = append(*i, s)
+	}
+	return nil
+}
 
 func init() {
 	flag.StringVar(&directoryToScan, "d", ".", "Directory to scan")
+	flag.Var(&filterFilePatterns, "f", "File Filter e.g. *.jar,*.zip")
 	flag.StringVar(&patternToSearch, "p", ".*", "RegExp pattern to match file name, path or content")
 	flag.BoolVar(&contentSearch, "e", false, "Enable content search")
 }
@@ -58,7 +78,7 @@ func main() {
 	
 	go fileListPrinter(fileInfoChannel,done)
 	
-	filepath.Walk(directoryToScan,createWalker(patternToSearch,fileInfoChannel,contentSearch))
+	filepath.Walk(directoryToScan,createWalker(patternToSearch,fileInfoChannel,filterFilePatterns,contentSearch))
 	
 	close(fileInfoChannel)
 	
@@ -81,10 +101,11 @@ func fileListPrinter(allFileInfoChannel chan fileInfo,done chan bool) {
 	}
 }
 
-func createWalker(pattern string, allFileInfoChannel chan fileInfo,enableContentSearch bool) filepath.WalkFunc {
+func createWalker(pattern string, allFileInfoChannel chan fileInfo,filteFilterList []string,enableContentSearch bool) filepath.WalkFunc {
 
 	compiledPattern := regexp.MustCompile(pattern)
 	fileScanner := createfileScanner(compiledPattern,enableContentSearch)
+	fileNameScanner := createFileFilter(filteFilterList)
 
 	return func(path string, info os.FileInfo, err error) error {		
 		if(err == nil){
@@ -96,13 +117,34 @@ func createWalker(pattern string, allFileInfoChannel chan fileInfo,enableContent
 				}
 				allFileInfoChannel <- fInfo
 			} else {
-				fInfo := fileScanner(path)
-				for _ , i := range fInfo {
-					allFileInfoChannel <- i
+				if fileNameScanner(info.Name()){
+					fInfo := fileScanner(path)
+					for _ , i := range fInfo {
+						allFileInfoChannel <- i
+					}					
 				}
 			}
 		}
 		return nil
+	}
+}
+
+func createFileFilter(list []string) filterFile {
+	
+	if(list == nil || len(list) == 0){
+		return func (b string) bool { return true }
+	} 
+	
+	return func (b string) bool {
+		for _, a := range list {
+			
+			m, _ := path.Match(a,b)
+	        
+			if m {
+	            return true
+	        }
+    	}
+    	return false
 	}
 }
 
