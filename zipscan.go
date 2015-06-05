@@ -13,18 +13,17 @@
 package main
 
 import (
-	"strings"
-	"errors"
-	"path"
-	"runtime"
-	"flag"
-	"fmt"
 	"archive/zip"
 	"bufio"
+	"errors"
+	"flag"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"strings"
 )
 
 type fileInfo struct {
@@ -41,11 +40,6 @@ type fileScanner func(string) []fileInfo
 type filterFile func(string) bool
 type csvString []string
 
-var directoryToScan string
-var patternToSearch string
-var contentSearch bool
-var filterFilePatterns csvString
-
 func (i *csvString) String() string {
 	return fmt.Sprint(*i)
 }
@@ -60,67 +54,80 @@ func (i *csvString) Set(value string) error {
 	return nil
 }
 
-func init() {
-	flag.StringVar(&directoryToScan, "d", ".", "Directory to scan")
-	flag.Var(&filterFilePatterns, "f", "File or Directory Name Filter e.g. *.jar,*.zip")
-	flag.StringVar(&patternToSearch, "p", ".*", "RegExp pattern to match file name, path or content")
-	flag.BoolVar(&contentSearch, "e", false, "Enable content search")
-}
-
 func main() {
-	
-	runtime.GOMAXPROCS(2)
-	
+
+	//Parse Arguments
+	var argFileFilterPattern csvString
+
+	flag.Var(&argFileFilterPattern, "f", "Comma seperated list of patterns of name. Only matching names will be search for content or name")
+	argTargetDirectory := flag.String("d", ".", "Directory to scan (Symbolic Links are not followed)")
+	argSearchContent := flag.Bool("s", false, "Enable content search. If this is enabled then Content and File Name patterns become same")
+	argNamePattern := flag.String("p", ".*", "Regular expression of name of file or directory")
+	argContentPattern := flag.String("c", "^$", "Regular expression we are looking in file ")
+
 	flag.Parse()
+	//Parse Arguments
+
+	//Setup Environment Config
+	runtime.GOMAXPROCS(2)
+	chanFileInfo := make(chan fileInfo, 1)
+	chanDone := make(chan bool)
+	patternContent, _ := regexp.Compile(*argContentPattern)
 	
-	fileInfoChannel := make(chan fileInfo)
-	done := make(chan bool)
+	//If content search is enabled then content pattern is also file pattern
+	var patternName *regexp.Regexp
 	
-	go fileListPrinter(fileInfoChannel,done)
-	
-	filepath.Walk(directoryToScan,createWalker(patternToSearch,fileInfoChannel,filterFilePatterns,contentSearch))
-	
-	close(fileInfoChannel)
-	
-	<- done
+	if *argSearchContent {
+		patternName = patternContent	
+	} else {
+		patternName, _ = regexp.Compile(*argNamePattern)	
+	}
+	//Setup Environment Config
+
+	go PrintFileInfoChannel(chanFileInfo, chanDone)
+
+	filepath.Walk(*argTargetDirectory, NewWalker(patternName, patternContent, chanFileInfo, argFileFilterPattern, *argSearchContent))
+
+	close(chanFileInfo)
+
+	<-chanDone
 }
 
-func fileListPrinter(allFileInfoChannel chan fileInfo,done chan bool) {
+func PrintFileInfoChannel(pInFileInfoChannel chan fileInfo, pDone chan bool) {
 	for {
 		select {
-			case fInfo , ok := <- allFileInfoChannel :
-				if ok {
-					if fInfo.foundContentMatch || fInfo.foundPathMatch {
-						fmt.Println(fInfo.path)
-					}
-				} else {
-					done <- true
-					break
+		case fInfo, ok := <-pInFileInfoChannel:
+			if ok {
+				if fInfo.foundContentMatch || fInfo.foundPathMatch {
+					fmt.Println(fInfo.path)
 				}
+			} else {
+				pDone <- true
+				break
+			}
 		}
 	}
 }
 
-func createWalker(pattern string, allFileInfoChannel chan fileInfo,filteFilterList []string,enableContentSearch bool) filepath.WalkFunc {
+func NewWalker(pNamePattern *regexp.Regexp, pContentPattern *regexp.Regexp, pOutFileInfoChannel chan fileInfo, pFileFilterList []string, pSearchContent bool) filepath.WalkFunc {
 
-	compiledPattern := regexp.MustCompile(pattern)
-	fileScanner := createfileScanner(compiledPattern,enableContentSearch)
-	fileNameScanner := createFileFilter(filteFilterList)
+	fnFileScanner := NewFileScanner(pNamePattern, pContentPattern, pSearchContent)
+	fnFileNameFilter := NewListContains(pFileFilterList)
 
-	return func(path string, info os.FileInfo, err error) error {		
-		if(err == nil){
-			if fileNameScanner(info.Name()){
-				if info.IsDir() {
-					fInfo := fileInfo{path: path, dir: true, zip: false, foundContentMatch: false, foundPathMatch: false}
-					p := compiledPattern.FindStringIndex(info.Name())
-					if p != nil {
+	return func(pFilePath string, pInfo os.FileInfo, pErr error) error {
+		if pErr == nil {
+			if fnFileNameFilter(pInfo.Name()) {
+				if pInfo.IsDir() {
+					fInfo := fileInfo{pFilePath, true, false, false, false}
+					index := pNamePattern.FindStringIndex(pInfo.Name())
+					if index != nil {
 						fInfo.foundPathMatch = true
 					}
-					allFileInfoChannel <- fInfo
+					pOutFileInfoChannel <- fInfo
 				} else {
-					fInfo := fileScanner(path)
-					for _ , i := range fInfo {
-						allFileInfoChannel <- i
+					fInfos := fnFileScanner(pFilePath)
+					for _, fInfo := range fInfos {
+						pOutFileInfoChannel <- fInfo
 					}
 				}
 			}
@@ -129,127 +136,137 @@ func createWalker(pattern string, allFileInfoChannel chan fileInfo,filteFilterLi
 	}
 }
 
-func createFileFilter(list []string) filterFile {
-	
-	if(list == nil || len(list) == 0){
-		return func (b string) bool { return true }
-	} 
-	
-	return func (b string) bool {
-		for _, a := range list {
-			
-			m, _ := path.Match(a,b)
-	        
-			if m {
-	            return true
-	        }
-    	}
-    	return false
-	}
-}
+func NewListContains(pFileNameMatchList []string) filterFile {
 
-func createStringFinder(r *regexp.Regexp) stringFinder {
-	return func(path string) bool {
-		match := r.FindStringIndex(path)
-		if match == nil {
-			return false
+	if pFileNameMatchList == nil || len(pFileNameMatchList) == 0 {
+		return func(pName string) bool { return true }
+	}
+
+	return func(pName string) bool {
+		for _, namePattern := range pFileNameMatchList {
+
+			isMatch, _ := filepath.Match(namePattern, pName)
+
+			if isMatch {
+				return true
+			}
 		}
-		return true
+		return false
 	}
 }
 
-func createContentFinder(r *regexp.Regexp) contentFinder {
-	return func(f io.Reader) bool {
-		bReader := bufio.NewReader(f)
-		match := r.FindReaderIndex(bReader)
-		if match == nil {
-			return false
-		}
-		return true
-	}
-}
+func NewFileScanner(pNamePattern *regexp.Regexp, pContentPattern *regexp.Regexp, pContentSearchEnabled bool) fileScanner {
 
-func createfileScanner(pattern *regexp.Regexp,enableContentSearch bool) fileScanner {
+	fnFileNameMatcher := NewStringFinder(pNamePattern)
+	fnFileContentMatcher := NewContentFinder(pContentPattern)
+	fnZipScanner := NewZipFileScanner(fnFileNameMatcher, fnFileContentMatcher, pContentSearchEnabled)
+	fnDefaultScanner := NewNormalFileScanner(fnFileNameMatcher, fnFileContentMatcher, pContentSearchEnabled)
 
-	fnFileNameMatcher := createStringFinder(pattern)
-	fnFileContentMatcher := createContentFinder(pattern)
-	fnZipReader := createZipFileReader(fnFileNameMatcher, fnFileContentMatcher,enableContentSearch)
-	fnNormalReader := createNormalFileReader(fnFileNameMatcher, fnFileContentMatcher,enableContentSearch)
-
-	return func(path string) []fileInfo {
-		processedFiles := fnZipReader(path)
-		if processedFiles == nil {
-			processedFiles = fnNormalReader(path)
+	return func(pFilePath string) []fileInfo {
+		processedFiles := fnZipScanner(pFilePath)
+		if len(processedFiles) == 0 {
+			processedFiles = fnDefaultScanner(pFilePath)
 		}
 		return processedFiles
 	}
 }
 
-func createZipFileReader(fileNameMatcher stringFinder, fileContentMatcher contentFinder,enableContentSearch bool) fileScanner {
-	return func(path string) []fileInfo {
+func NewZipFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) fileScanner {
+	return func(pFilePath string) []fileInfo {
 
-		zipFile, err := zip.OpenReader(path)
+		fInfoList := make([]fileInfo, 0)
+
+		zipFile, err := zip.OpenReader(pFilePath)
 
 		if err != nil {
-			return nil
+			return fInfoList
 		}
 
-		fInfo := make([]fileInfo, 1)
+		fInfoList = append(fInfoList, fileInfo{pFilePath, false, true, false, false})
 
-		fInfo[0] = fileInfo{path: path, dir: false, zip: true, foundContentMatch: false, foundPathMatch: false}
-
-		if fileNameMatcher(path) {
-			fInfo[0].foundPathMatch = true
+		if pFnFileNameMatcher(pFilePath) {
+			fInfoList[0].foundPathMatch = true
 		}
 
 		for _, zFile := range zipFile.File {
 
-			zFileInfo := fileInfo{path: path + "@" + zFile.Name, dir: zFile.FileInfo().IsDir(), zip: true, foundContentMatch: false, foundPathMatch: false}
+			zFileInfo := fileInfo{pFilePath + "@" + zFile.Name, zFile.FileInfo().IsDir(), true, false, false}
 
-			if fileNameMatcher(zFile.Name) {
+			if pFnFileNameMatcher(zFile.Name) {
 				zFileInfo.foundPathMatch = true
 			}
-			
-			if enableContentSearch {
+
+			if pContentSearchEnabled {
 				zFileReader, _ := zFile.Open()
-	
-				if fileContentMatcher(zFileReader) {
+
+				if pFnFileContentMatcher(zFileReader) {
 					zFileInfo.foundContentMatch = true
 				}
-	
+
 				zFileReader.Close()
 			}
 
-			fInfo = append(fInfo, zFileInfo)
+			fInfoList = append(fInfoList, zFileInfo)
 		}
 
 		zipFile.Close()
 
-		return fInfo
+		return fInfoList
 	}
 }
 
-func createNormalFileReader(fileNameMatcher stringFinder, fileContentMatcher contentFinder,enableContentSearch bool) fileScanner {
-	return func(fPath string) []fileInfo {
+func NewNormalFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) fileScanner {
+	return func(pFilePath string) []fileInfo {
 
 		fInfo := make([]fileInfo, 1)
 
-		fInfo[0] = fileInfo{path: fPath, dir: false, zip: false, foundContentMatch: false, foundPathMatch: false}
+		fInfo[0] = fileInfo{path: pFilePath, dir: false, zip: false, foundContentMatch: false, foundPathMatch: false}
 
 		//Match File Name
-		if fileNameMatcher(path.Base(fPath)) {
+		if pFnFileNameMatcher(filepath.Base(pFilePath)) {
 			fInfo[0].foundPathMatch = true
 		}
-		
-		if enableContentSearch {
-			nFile, err := os.Open(fPath)
-			defer nFile.Close()
-	
-			if err == nil && fileContentMatcher(nFile) {
+
+		if pContentSearchEnabled {
+			f, err := os.Open(pFilePath)
+			defer f.Close()
+
+			if err == nil && pFnFileContentMatcher(f) {
 				fInfo[0].foundContentMatch = true
 			}
 		}
 
 		return fInfo
+	}
+}
+
+func NewStringFinder(pPattern *regexp.Regexp) stringFinder {
+	return func(pSourceString string) bool {
+
+		if pPattern == nil {
+			return false
+		}
+
+		match := pPattern.FindStringIndex(pSourceString)
+		if match == nil {
+			return false
+		}
+		return true
+	}
+}
+
+func NewContentFinder(pPattern *regexp.Regexp) contentFinder {
+	return func(pReader io.Reader) bool {
+
+		if pPattern == nil {
+			return false
+		}
+
+		bReader := bufio.NewReader(pReader)
+		match := pPattern.FindReaderIndex(bReader)
+		if match == nil {
+			return false
+		}
+		return true
 	}
 }
