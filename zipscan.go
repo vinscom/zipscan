@@ -53,7 +53,7 @@ func main() {
 	//Parse Arguments
 
 	//Setup Environment Config
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(2)
 	patternContent, _ := regexp.Compile(*argContentPattern)
 
 	//If content search is enabled then content pattern is also file pattern

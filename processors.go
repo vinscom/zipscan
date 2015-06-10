@@ -93,7 +93,7 @@ func NewZipFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher co
 			fInfoList = append(fInfoList, zFileInfo)
 		}
 
-		defer zipFile.Close()
+		zipFile.Close()
 		
 		for _,f := range fInfoList {
 			out <- f
@@ -104,6 +104,11 @@ func NewZipFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher co
 //Scan Noraml File
 func NewNormalFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) processorFn {
 	return func(f fileInfo, out fileInfoChannel) {
+
+		if f.processed {
+			out <- f
+			return
+		}
 
 		//Match File Name
 		if pFnFileNameMatcher(f.name) {
@@ -128,6 +133,6 @@ func NewNormalFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher
 //ConsolePrintProcessor
 func PrintToConsole(f fileInfo, out fileInfoChannel) {
 	if(f.foundContentMatch || f.foundPathMatch){
-		fmt.Println(f.name)
+		fmt.Println(f.path)
 	}
 }
