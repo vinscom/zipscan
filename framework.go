@@ -78,8 +78,8 @@ func NewProcessorRunner(in fileInfoChannel,out fileInfoChannel,fn processor) fun
 func NewProcessorRunnerWithWait(in fileInfoChannel,out fileInfoChannel,fn processor,count int)  func(){
 	return func(){
 		var wg sync.WaitGroup
+		wg.Add(count)
 		for i := 1; i <= count; i++ {
-			wg.Add(1)
 			go func() {
 				fn(in, out)
 				defer wg.Done()
