@@ -45,7 +45,7 @@ func main() {
 
 	flag.Var(&argFileFilterPattern, "f", "Comma seperated list of patterns of name. Only matching names will be search for content or name")
 	argTargetDirectory := flag.String("d", ".", "Directory to scan (Symbolic Links are not followed)")
-	argSearchContent := flag.Bool("s", false, "Enable content search. If this is enabled then Content and File Name patterns become same")
+	argSearchContent := flag.Bool("s", false, "Enable content search. To eanble add -s=true or -s If this is enabled then Content and File Name patterns become same")
 	argNamePattern := flag.String("p", ".*", "Regular expression of name of file or directory")
 	argContentPattern := flag.String("c", "^$", "Regular expression we are looking in file ")
 
