@@ -20,7 +20,7 @@ import (
 )
 
 //Find all files & dir
-func NewFileInfoGenerator(dir string) processorFn {
+func NewTraverseDirectoryProcessor(dir string) processorFn {
 	return func(f fileInfo, out fileInfoChannel){
 		filepath.Walk(dir, func(pFilePath string, pInfo os.FileInfo, pErr error) error {
 			if pErr == nil {
@@ -32,7 +32,7 @@ func NewFileInfoGenerator(dir string) processorFn {
 }
 
 //Filter files & dir
-func NewFileNameFilter(pFileNameMatchList []string) processorFn {
+func NewFileNameFilterProcessor(pFileNameMatchList []string) processorFn {
 	if pFileNameMatchList == nil || len(pFileNameMatchList) == 0 {
 		return func(f fileInfo, out fileInfoChannel){
 			out <- f
@@ -53,7 +53,7 @@ func NewFileNameFilter(pFileNameMatchList []string) processorFn {
 }
 
 //Scan Zip File
-func NewZipFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) processorFn {
+func NewZipFileProcessor(pFnFileNameMatcher stringFinder, pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) processorFn {
 	return func(f fileInfo, out fileInfoChannel) {
 
 		fInfoList := make([]fileInfo, 0)
@@ -102,7 +102,7 @@ func NewZipFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher co
 }
 
 //Scan Noraml File
-func NewNormalFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) processorFn {
+func NewNormalFileProcessor(pFnFileNameMatcher stringFinder, pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) processorFn {
 	return func(f fileInfo, out fileInfoChannel) {
 
 		if f.processed {
@@ -131,7 +131,7 @@ func NewNormalFileScanner(pFnFileNameMatcher stringFinder, pFnFileContentMatcher
 }
 
 //ConsolePrintProcessor
-func PrintToConsole(f fileInfo, out fileInfoChannel) {
+func PrintToConsoleProcessor(f fileInfo, out fileInfoChannel) {
 	if(f.foundContentMatch || f.foundPathMatch){
 		fmt.Println(f.path)
 	}

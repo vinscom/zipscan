@@ -71,11 +71,11 @@ func main() {
 	fnFileNameMatcher := NewStringFinder(patternName)
 	fnFileContentMatcher := NewContentFinder(patternContent)
 	
-	chain[0] = processorInfo{NewProcessor(NewFileInfoGenerator(*argTargetDirectory)), 1}
-	chain[1] = processorInfo{NewProcessor(NewFileNameFilter(argFileFilterPattern)), 1}
-	chain[2] = processorInfo{NewProcessor(NewZipFileScanner(fnFileNameMatcher,fnFileContentMatcher,*argSearchContent)), 3}
-	chain[3] = processorInfo{NewProcessor(NewNormalFileScanner(fnFileNameMatcher,fnFileContentMatcher,*argSearchContent)), 1}
-	chain[4] = processorInfo{NewProcessor(PrintToConsole), 1}
+	chain[0] = processorInfo{NewProcessor(NewTraverseDirectoryProcessor(*argTargetDirectory)), 1}
+	chain[1] = processorInfo{NewProcessor(NewFileNameFilterProcessor(argFileFilterPattern)), 1}
+	chain[2] = processorInfo{NewProcessor(NewZipFileProcessor(fnFileNameMatcher,fnFileContentMatcher,*argSearchContent)), 3}
+	chain[3] = processorInfo{NewProcessor(NewNormalFileProcessor(fnFileNameMatcher,fnFileContentMatcher,*argSearchContent)), 1}
+	chain[4] = processorInfo{NewProcessor(PrintToConsoleProcessor), 1}
 
 	done := SetupSystem(&chain)
 
