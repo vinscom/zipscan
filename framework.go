@@ -57,7 +57,7 @@ func NewProcessor(fn processorFn) processor {
 func SetupSystem(p *[]processorInfo) fileInfoChannel {
 	var lastProcessorOutChannel fileInfoChannel = nil
 	for _, e := range *p {
-		newOutChannel := make(fileInfoChannel)
+		newOutChannel := make(fileInfoChannel,100)
 		if e.count > 1 {
 			go NewProcessorRunnerWithWait(lastProcessorOutChannel,newOutChannel,e.fn,e.count)()
 		} else {

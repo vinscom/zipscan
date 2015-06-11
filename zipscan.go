@@ -13,11 +13,11 @@
 package main
 
 import (
+	"runtime"
 	"errors"
 	"flag"
 	"fmt"
 	"regexp"
-	"runtime"
 	"strings"
 )
 
@@ -53,7 +53,7 @@ func main() {
 	//Parse Arguments
 
 	//Setup Environment Config
-	runtime.GOMAXPROCS(2)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	patternContent, _ := regexp.Compile(*argContentPattern)
 
 	//If content search is enabled then content pattern is also file pattern
@@ -66,17 +66,17 @@ func main() {
 	}
 	//Setup Environment Config
 
-	chain := make([]processorInfo,0)
+	chain := make([]processorInfo, 0)
 
 	fnFileNameMatcher := NewStringFinder(patternName)
 	fnFileContentMatcher := NewContentFinder(patternContent)
-	
+
 	chain = append(chain,
-	processorInfo{NewProcessor(NewTraverseDirectoryProcessor(*argTargetDirectory)), 1},
-	processorInfo{NewProcessor(NewFileNameFilterProcessor(argFileFilterPattern)), 1},
-	processorInfo{NewProcessor(NewZipFileProcessor(fnFileNameMatcher,fnFileContentMatcher,*argSearchContent)), 3},
-	processorInfo{NewProcessor(NewNormalFileProcessor(fnFileNameMatcher,fnFileContentMatcher,*argSearchContent)), 1},
-	processorInfo{NewProcessor(PrintToConsoleProcessor), 1})
+		processorInfo{NewProcessor(NewTraverseDirectoryProcessor(*argTargetDirectory)), 1},
+		processorInfo{NewProcessor(NewFileNameFilterProcessor(argFileFilterPattern)), 1},
+		processorInfo{NewProcessor(NewZipFileProcessor(fnFileNameMatcher, fnFileContentMatcher, *argSearchContent)), runtime.NumCPU()},
+		processorInfo{NewProcessor(NewNormalFileProcessor(fnFileNameMatcher, fnFileContentMatcher, *argSearchContent)), runtime.NumCPU()},
+		processorInfo{NewProcessor(PrintToConsoleProcessor), 1})
 
 	done := SetupSystem(&chain)
 
