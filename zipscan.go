@@ -45,7 +45,7 @@ func main() {
 
 	flag.Var(&argFileFilterPattern, "f", "Comma seperated list of patterns of name. Only matching names will be search for content or name")
 	argTargetDirectory := flag.String("d", ".", "Directory to scan (Symbolic Links are not followed)")
-	argSearchContent := flag.Bool("s", false, "Enable content search. To eanble add -s=true or -s If this is enabled then Content and File Name patterns become same")
+	argSearchContent := flag.Bool("s", false, "Enable content search. To eanble add -s=true or -s")
 	argNamePattern := flag.String("p", ".*", "Regular expression of name of file or directory")
 	argContentPattern := flag.String("c", "^$", "Regular expression we are looking in file ")
 
@@ -57,13 +57,8 @@ func main() {
 	patternContent, _ := regexp.Compile(*argContentPattern)
 
 	//If content search is enabled then content pattern is also file pattern
-	var patternName *regexp.Regexp
-
-	if *argSearchContent {
-		patternName = patternContent
-	} else {
-		patternName, _ = regexp.Compile(*argNamePattern)
-	}
+	patternName, _ := regexp.Compile(*argNamePattern)
+	
 	//Setup Environment Config
 
 	chain := make([]processorInfo, 0)
@@ -74,8 +69,9 @@ func main() {
 	chain = append(chain,
 		processorInfo{NewProcessor(NewTraverseDirectoryProcessor(*argTargetDirectory)), 1},
 		processorInfo{NewProcessor(NewFileNameFilterProcessor(argFileFilterPattern)), 1},
-		processorInfo{NewProcessor(NewZipFileProcessor(fnFileNameMatcher, fnFileContentMatcher, *argSearchContent)), runtime.NumCPU()},
-		processorInfo{NewProcessor(NewNormalFileProcessor(fnFileNameMatcher, fnFileContentMatcher, *argSearchContent)), runtime.NumCPU()},
+		processorInfo{NewProcessor(NewZipFileProcessor(fnFileContentMatcher, *argSearchContent)), runtime.NumCPU()},
+		processorInfo{NewProcessor(NewNormalFileProcessor(fnFileContentMatcher, *argSearchContent)), runtime.NumCPU()},
+		processorInfo{NewProcessor(NewMatchFileNameProcessor(fnFileNameMatcher, !(*argSearchContent))), 1},
 		processorInfo{NewProcessor(PrintToConsoleProcessor), 1})
 
 	done := SetupSystem(&chain)

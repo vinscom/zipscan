@@ -52,8 +52,25 @@ func NewFileNameFilterProcessor(pFileNameMatchList []string) processorFn {
 	}
 }
 
+func NewMatchFileNameProcessor(pFnFileNameMatcher stringFinder,pEnable bool) processorFn {
+	if pEnable {
+		return func(f fileInfo, out fileInfoChannel) {
+			if pFnFileNameMatcher(f.name) {
+				f.foundPathMatch = true
+			}
+			out <- f
+			
+		}
+	} else {
+		return func(f fileInfo, out fileInfoChannel) {
+			out <- f
+			
+		}
+	}
+}
+
 //Scan Zip File
-func NewZipFileProcessor(pFnFileNameMatcher stringFinder, pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) processorFn {
+func NewZipFileProcessor(pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) processorFn {
 	return func(f fileInfo, out fileInfoChannel) {
 
 		fInfoList := make([]fileInfo, 0)
@@ -67,18 +84,10 @@ func NewZipFileProcessor(pFnFileNameMatcher stringFinder, pFnFileContentMatcher 
 
 		f.processed = true
 		fInfoList = append(fInfoList, f)
-		
-		if pFnFileNameMatcher(f.name) {
-			fInfoList[0].foundPathMatch = true
-		}
 
 		for _, zFile := range zipFile.File {
 
 			zFileInfo := fileInfo{false,f.path + "@" + zFile.FileInfo().Name(),zFile.FileInfo().Name(),zFile.FileInfo().IsDir(),false,false}
-
-			if pFnFileNameMatcher(zFile.Name) {
-				zFileInfo.foundPathMatch = true
-			}
 
 			if pContentSearchEnabled {
 				zFileReader, _ := zFile.Open()
@@ -102,30 +111,22 @@ func NewZipFileProcessor(pFnFileNameMatcher stringFinder, pFnFileContentMatcher 
 }
 
 //Scan Noraml File
-func NewNormalFileProcessor(pFnFileNameMatcher stringFinder, pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) processorFn {
+func NewNormalFileProcessor(pFnFileContentMatcher contentFinder, pContentSearchEnabled bool) processorFn {
 	return func(f fileInfo, out fileInfoChannel) {
 
-		if f.processed {
+		if f.processed || !pContentSearchEnabled {
 			out <- f
 			return
 		}
+		
+		file, err := os.Open(f.path)
+		defer file.Close()
 
-		//Match File Name
-		if pFnFileNameMatcher(f.name) {
-			f.foundPathMatch = true
-		}
-
-		if pContentSearchEnabled {
-			file, err := os.Open(f.path)
-			defer file.Close()
-
-			if err == nil && pFnFileContentMatcher(file) {
-				f.foundContentMatch = true
-			}
-		}
+		if err == nil && pFnFileContentMatcher(file) {
+			f.foundContentMatch = true
+		} 
 		
 		f.processed = true
-		
 		out <- f
 	}
 }
