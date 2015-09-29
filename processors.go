@@ -87,7 +87,7 @@ func NewZipFileProcessor(pFnFileContentMatcher contentFinder, pContentSearchEnab
 
 		for _, zFile := range zipFile.File {
 
-			zFileInfo := fileInfo{false,f.path + "@" + zFile.FileInfo().Name(),zFile.FileInfo().Name(),zFile.FileInfo().IsDir(),false,false}
+			zFileInfo := fileInfo{false,f.path + "@" + zFile.FileHeader.Name,zFile.FileInfo().Name(),zFile.FileInfo().IsDir(),false,false}
 
 			if pContentSearchEnabled {
 				zFileReader, _ := zFile.Open()
